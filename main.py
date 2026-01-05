@@ -8,9 +8,6 @@ from slowapi.errors import RateLimitExceeded
 
 from config import settings
 from models import ProcessPDFResponse, DocumentChunk, ErrorResponse
-from pdf_converter import PDFConverter
-from chunker import MarkdownChunker
-from embedder import EmbeddingGenerator
 from auth import verify_api_key
 
 # Configure logging
@@ -23,15 +20,29 @@ logger = logging.getLogger(__name__)
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
-# Global instances (initialized on module import for serverless compatibility)
-logger.info("Initializing RAG microservice components...")
-pdf_converter = PDFConverter()
-markdown_chunker = MarkdownChunker(
-    max_tokens=settings.max_chunk_tokens,
-    overlap_tokens=settings.chunk_overlap_tokens,
-)
-embedding_generator = EmbeddingGenerator()
-logger.info("RAG microservice components initialized")
+# Global instances (lazy-initialized for serverless compatibility)
+pdf_converter = None
+markdown_chunker = None
+embedding_generator = None
+
+
+def get_components():
+    """Lazy-initialize components on first use."""
+    global pdf_converter, markdown_chunker, embedding_generator
+    if pdf_converter is None:
+        logger.info("Initializing RAG microservice components...")
+        from pdf_converter import PDFConverter
+        from chunker import MarkdownChunker
+        from embedder import EmbeddingGenerator
+        
+        pdf_converter = PDFConverter()
+        markdown_chunker = MarkdownChunker(
+            max_tokens=settings.max_chunk_tokens,
+            overlap_tokens=settings.chunk_overlap_tokens,
+        )
+        embedding_generator = EmbeddingGenerator()
+        logger.info("RAG microservice components initialized")
+    return pdf_converter, markdown_chunker, embedding_generator
 
 
 app = FastAPI(
@@ -67,12 +78,13 @@ def read_root():
 @app.get("/health")
 def health_check():
     """Detailed health check."""
+    _pdf_converter, _markdown_chunker, _embedding_generator = get_components()
     return {
         "status": "healthy",
         "components": {
-            "pdf_converter": pdf_converter is not None,
-            "markdown_chunker": markdown_chunker is not None,
-            "embedding_generator": embedding_generator is not None,
+            "pdf_converter": _pdf_converter is not None,
+            "markdown_chunker": _markdown_chunker is not None,
+            "embedding_generator": _embedding_generator is not None,
         },
         "config": {
             "embedding_model": settings.embedding_model,
@@ -125,21 +137,24 @@ async def process_pdf(
 
         logger.info(f"Processing PDF: {file_name} for user {user_id}")
 
+        # Get components (lazy-initialize if needed)
+        _pdf_converter, _markdown_chunker, _embedding_generator = get_components()
+
         # Read PDF bytes
         pdf_bytes = await file.read()
         logger.info(f"Read {len(pdf_bytes)} bytes from {file_name}")
 
         # Convert PDF to Markdown
-        markdown_text = await pdf_converter.convert_to_markdown(pdf_bytes, file_name)
+        markdown_text = await _pdf_converter.convert_to_markdown(pdf_bytes, file_name)
 
         # Chunk the markdown semantically
-        chunks = markdown_chunker.chunk(markdown_text)
+        chunks = _markdown_chunker.chunk(markdown_text)
 
         # Extract text content for embedding generation
         chunk_texts = [chunk["content"] for chunk in chunks]
 
         # Generate embeddings for all chunks
-        embeddings = await embedding_generator.generate_embeddings(chunk_texts)
+        embeddings = await _embedding_generator.generate_embeddings(chunk_texts)
 
         # Build response with structured chunks
         document_chunks = []

@@ -1,4 +1,3 @@
-from fastapi import FastAPI
 from mangum import Mangum
 import sys
 import os

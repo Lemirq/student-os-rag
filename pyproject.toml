@@ -12,5 +12,5 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.20",
     "slowapi>=0.1.9",
-    "mangum>=0.17.0",
+    "mangum==0.17.0",
 ]
