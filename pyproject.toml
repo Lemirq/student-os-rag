@@ -3,7 +3,7 @@ name = "student-os-rag"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.9,<3.13"
 dependencies = [
     "fastapi[standard]>=0.128.0",
     "pymupdf4llm>=0.0.17",
@@ -12,4 +12,5 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.20",
     "slowapi>=0.1.9",
+    "mangum>=0.17.0",
 ]

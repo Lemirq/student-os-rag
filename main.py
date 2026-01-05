@@ -1,5 +1,4 @@
 import logging
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -24,40 +23,21 @@ logger = logging.getLogger(__name__)
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
-# Global instances (initialized on startup)
-pdf_converter: Optional[PDFConverter] = None
-markdown_chunker: Optional[MarkdownChunker] = None
-embedding_generator: Optional[EmbeddingGenerator] = None
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Initialize services on startup, clean up on shutdown."""
-    global pdf_converter, markdown_chunker, embedding_generator
-
-    logger.info("Initializing RAG microservice...")
-
-    # Initialize components
-    pdf_converter = PDFConverter()
-    markdown_chunker = MarkdownChunker(
-        max_tokens=settings.max_chunk_tokens,
-        overlap_tokens=settings.chunk_overlap_tokens,
-    )
-    embedding_generator = EmbeddingGenerator()
-
-    logger.info("RAG microservice initialized successfully")
-
-    yield
-
-    # Cleanup
-    logger.info("Shutting down RAG microservice...")
+# Global instances (initialized on module import for serverless compatibility)
+logger.info("Initializing RAG microservice components...")
+pdf_converter = PDFConverter()
+markdown_chunker = MarkdownChunker(
+    max_tokens=settings.max_chunk_tokens,
+    overlap_tokens=settings.chunk_overlap_tokens,
+)
+embedding_generator = EmbeddingGenerator()
+logger.info("RAG microservice components initialized")
 
 
 app = FastAPI(
     title="StudentOS RAG Microservice",
     description="PDF ingestion, markdown conversion, chunking, and embedding generation",
     version="0.1.0",
-    lifespan=lifespan,
 )
 
 # Register rate limiter

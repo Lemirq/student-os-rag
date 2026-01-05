@@ -275,6 +275,66 @@ uvicorn main:app --reload
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 
+## Deployment to Vercel
+
+This service can be deployed to Vercel as a serverless function.
+
+### 1. Deploy to Vercel
+
+```bash
+# Install Vercel CLI (if not already installed)
+npm i -g vercel
+
+# Deploy
+vercel
+
+# Or deploy to production
+vercel --prod
+```
+
+### 2. Configure Environment Variables in Vercel
+
+In your Vercel project settings, add these environment variables:
+
+| Variable | Value | Required |
+|----------|-------|----------|
+| `OPENAI_API_KEY` | Your OpenAI API key | ✅ Yes |
+| `API_KEY` | Your generated secure API key | ✅ Yes |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Optional (has default) |
+| `EMBEDDING_DIMENSIONS` | `1536` | Optional (has default) |
+| `MAX_CHUNK_TOKENS` | `500` | Optional (has default) |
+| `CHUNK_OVERLAP_TOKENS` | `50` | Optional (has default) |
+| `RATE_LIMIT` | `10/minute` | Optional (has default) |
+
+**Important:** The `API_KEY` must match the `RAG_API_KEY` in your Next.js app's environment variables.
+
+### 3. Update Next.js Environment Variable
+
+After deployment, update your Next.js `.env.local` or Vercel environment variables:
+
+```bash
+RAG_API_URL=https://your-rag-service.vercel.app
+RAG_API_KEY=your_secure_api_key_here
+```
+
+### 4. Vercel Build Settings
+
+The project is pre-configured with:
+- **Framework Preset**: Other
+- **Build Command**: (uses vercel.json)
+- **Install Command**: `pip install uv && uv sync`
+- **Output Directory**: N/A (handled by vercel.json)
+
+### Serverless Architecture
+
+The Vercel deployment uses:
+- **Handler**: `api/index.py` (Mangum wrapper)
+- **Runtime**: Python 3.12 (Vercel's latest supported version)
+- **Concurrency**: Auto-scaling serverless functions
+- **Cold Start**: Components initialized on first request
+
+**Note**: First request after deployment may take longer due to cold start.
+
 ## Production Considerations
 
 1. **CORS Configuration**: Update `allow_origins` in `main.py` to restrict allowed origins
