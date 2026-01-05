@@ -1,14 +1,18 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from config import settings
 from models import ProcessPDFResponse, DocumentChunk, ErrorResponse
 from pdf_converter import PDFConverter
 from chunker import MarkdownChunker
 from embedder import EmbeddingGenerator
+from auth import verify_api_key
 
 # Configure logging
 logging.basicConfig(
@@ -16,6 +20,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Global instances (initialized on startup)
 pdf_converter: Optional[PDFConverter] = None
@@ -52,6 +59,10 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Register rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configure CORS
 app.add_middleware(
@@ -96,10 +107,14 @@ def health_check():
     response_model=ProcessPDFResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
+        403: {"model": ErrorResponse, "description": "Forbidden - Invalid API key"},
+        429: {"model": ErrorResponse, "description": "Too many requests"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
 )
+@limiter.limit(settings.rate_limit)
 async def process_pdf(
+    request: Request,
     file: UploadFile = File(..., description="PDF file to process"),
     user_id: str = Form(..., description="UUID of the user"),
     file_name: str = Form(..., description="Original filename"),
@@ -107,6 +122,7 @@ async def process_pdf(
         ..., description="Document type: 'syllabus', 'notes', or 'other'"
     ),
     course_id: Optional[str] = Form(None, description="Optional course UUID"),
+    api_key: str = Depends(verify_api_key),
 ):
     """
     Process a PDF file: convert to markdown, chunk semantically, and generate embeddings.

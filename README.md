@@ -85,6 +85,51 @@ Health check endpoint with component status.
 }
 ```
 
+## Security
+
+The RAG microservice implements multiple security layers to ensure only your Next.js application can access it:
+
+### API Key Authentication
+
+All requests to `/process-pdf` require a valid API key in the `X-API-Key` header.
+
+```bash
+curl -X POST http://localhost:8000/process-pdf \
+  -H "X-API-Key: your_secure_api_key_here" \
+  -F "file=@document.pdf" \
+  -F "user_id=uuid" \
+  -F "file_name=document.pdf" \
+  -F "document_type=notes"
+```
+
+**Security Features:**
+- ✅ API key stored in environment variables
+- ✅ Never exposed to browser/client
+- ✅ Server-to-server authentication only
+- ✅ Returns `403 Forbidden` for invalid keys
+
+### Rate Limiting
+
+Prevents abuse by limiting requests per IP address:
+- **Default**: 10 requests per minute
+- **Configurable**: Set `RATE_LIMIT` in `.env`
+- **Response**: `429 Too Many Requests` when exceeded
+
+### Server-to-Server Communication
+
+The API key is **never** exposed to end users:
+
+```
+User Browser → Next.js Server Action (has API key) → FastAPI RAG Service
+```
+
+**NOT:**
+```
+User Browser (exposed key ❌) → FastAPI RAG Service
+```
+
+The Next.js Server Action (`"use server"`) runs on the server and handles the API key securely.
+
 ## Installation
 
 ### Prerequisites
@@ -102,8 +147,16 @@ Health check endpoint with component status.
 2. **Configure environment:**
    ```bash
    cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY
+
+   # Generate a secure API key
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+   # Edit .env and add:
+   # - OPENAI_API_KEY (your OpenAI API key)
+   # - API_KEY (the generated secure key from above)
    ```
+
+   **Important:** Copy the same `API_KEY` to your Next.js `.env.local` as `RAG_API_KEY`
 
 3. **Run the service:**
    ```bash

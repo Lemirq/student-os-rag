@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # API Configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    api_key: str  # Required API key for authentication
+
+    # Rate Limiting
+    rate_limit: str = "10/minute"  # Max requests per API key per minute
 
     model_config = SettingsConfigDict(
         env_file=".env",
