@@ -246,14 +246,47 @@ export async function processPDFWithRAG(
 
 ## Chunking Strategy
 
-The service uses **semantic chunking by markdown headers**:
+The service uses **multi-pass adaptive chunking** with progressive fallback:
 
-1. **Split by headers**: Documents are first split at H1-H6 headers
-2. **Respect token limits**: Sections exceeding `MAX_CHUNK_TOKENS` are further split by paragraphs or sentences
-3. **Preserve structure**: Header metadata (heading text, section level) is stored with each chunk
-4. **Token estimation**: Uses word count × 1.3 (matches Next.js app)
+### Pass 1: Markdown Headers (Primary)
+- Documents are first split at H1-H6 headers (`#`, `##`, `###`, etc.)
+- Preserves document structure and semantic boundaries
+- Header metadata (heading text, section level) is stored with each chunk
 
-This preserves document structure while ensuring chunks are appropriately sized for semantic search.
+### Pass 2: Bold Heading Detection
+- If a large section lacks markdown sub-headers, detects standalone bold text
+- Pattern: `**Bold Heading**` on its own line (minimum 3 words to avoid noise)
+- Treats bold headings as pseudo-sections for semantic splitting
+
+### Pass 3: Structural Markers
+- If no bold headings, splits by structural markers:
+  - Bullet lists (`- ` or `* `)
+  - Numbered lists (`1.`, `2.`, etc.)
+  - Horizontal rules (`---`, `***`)
+
+### Pass 4: Paragraph Splitting (Fallback)
+- Final fallback when no semantic structure is detected
+- Splits by paragraphs and sentences while respecting token limits
+- **Increased overlap (2x)** to maintain context when no semantic boundaries exist
+
+### Token Management
+- **Maximum tokens per chunk**: 500 (configurable via `MAX_CHUNK_TOKENS`)
+- **Standard overlap**: 50 tokens between chunks
+- **Increased overlap**: 100 tokens for fallback mode
+- **Token estimation**: Uses word count × 1.3 (matches Next.js app)
+
+### Metadata Enhancement
+Each chunk includes `chunking_method` for debugging and analysis:
+- `markdown_headers`: Split by markdown headers (H1-H6)
+- `bold_headings`: Split by standalone bold text
+- `structural_markers`: Split by list items and rules
+- `paragraph_split`: Fallback paragraph splitting with increased overlap
+
+This adaptive strategy ensures:
+- **Best of both worlds**: Uses markdown headers when available
+- **Graceful degradation**: Falls back intelligently for documents with poor structure
+- **Context preservation**: Increased overlap when semantic boundaries are unclear
+- **Proper chunk sizing**: Respects token limits throughout all passes
 
 ## Error Handling
 
