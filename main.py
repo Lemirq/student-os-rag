@@ -1,4 +1,5 @@
 import logging
+import io
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -9,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from config import settings
 from models import ProcessPDFResponse, DocumentChunk, ErrorResponse
 from auth import verify_api_key
+from html_converter import convert_html_to_markdown
 
 # Configure logging
 logging.basicConfig(
@@ -47,7 +49,7 @@ def get_components():
 
 app = FastAPI(
     title="StudentOS RAG Microservice",
-    description="PDF ingestion, markdown conversion, chunking, and embedding generation",
+    description="Document (PDF/HTML) ingestion, markdown conversion, chunking, and embedding generation",
     version="0.1.0",
 )
 
@@ -95,7 +97,7 @@ def health_check():
 
 
 @app.post(
-    "/process-pdf",
+    "/process-document",
     response_model=ProcessPDFResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Bad request"},
@@ -105,7 +107,7 @@ def health_check():
     },
 )
 @limiter.limit(settings.rate_limit)
-async def process_pdf(
+async def process_document(
     request: Request,
     file: UploadFile = File(..., description="PDF file to process"),
     user_id: str = Form(..., description="UUID of the user"),
@@ -117,7 +119,7 @@ async def process_pdf(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Process a PDF file: convert to markdown, chunk semantically, and generate embeddings.
+    Process a document (PDF or HTML): convert to markdown, chunk semantically, and generate embeddings.
 
     Returns structured chunks ready for database insertion by the Next.js app.
     """
@@ -130,22 +132,28 @@ async def process_pdf(
             )
 
         # Validate file type
-        if not file.filename or not file.filename.lower().endswith(".pdf"):
+        if not file.filename or not (
+            file.filename.lower().endswith(".pdf") or 
+            file.filename.lower().endswith(".html")
+        ):
             raise HTTPException(
-                status_code=400, detail="Only PDF files are supported"
+                status_code=400, detail="Only PDF and HTML files are supported"
             )
 
-        logger.info(f"Processing PDF: {file_name} for user {user_id}")
+        logger.info(f"Processing document: {file_name} for user {user_id}")
 
         # Get components (lazy-initialize if needed)
         _pdf_converter, _markdown_chunker, _embedding_generator = get_components()
 
-        # Read PDF bytes
-        pdf_bytes = await file.read()
-        logger.info(f"Read {len(pdf_bytes)} bytes from {file_name}")
+        # Read file bytes
+        file_bytes = await file.read()
+        logger.info(f"Read {len(file_bytes)} bytes from {file_name}")
 
-        # Convert PDF to Markdown
-        markdown_text = await _pdf_converter.convert_to_markdown(pdf_bytes, file_name)
+        # Convert file to Markdown based on file type
+        if file.filename.lower().endswith(".pdf"):
+            markdown_text = await _pdf_converter.convert_to_markdown(file_bytes, file_name)
+        else:
+            markdown_text = convert_html_to_markdown(io.BytesIO(file_bytes))
 
         # Chunk the markdown semantically
         chunks = _markdown_chunker.chunk(markdown_text)
@@ -190,9 +198,9 @@ async def process_pdf(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing PDF {file_name}: {str(e)}", exc_info=True)
+        logger.error(f"Error processing document {file_name}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to process PDF: {str(e)}"
+            status_code=500, detail=f"Failed to process document: {str(e)}"
         )
 
 
